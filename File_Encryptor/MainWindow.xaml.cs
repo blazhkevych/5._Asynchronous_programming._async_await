@@ -13,6 +13,11 @@ namespace File_Encryptor;
 /// </summary>
 public partial class MainWindow : Window
 {
+    private readonly CancellationTokenSource
+        cts = new(); // попробовать вынести в зону видимости класса и из события клика "отмены" вызывать cts.Cancel();
+
+    public SynchronizationContext UiContext;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -22,9 +27,10 @@ public partial class MainWindow : Window
         StartEncryptButton.IsEnabled = false;
         // блокировка кнопки "Отмена" при запуске программы
         CancelButton.IsEnabled = false;
+        // Получим контекст синхронизации для текущего потока.
+        UiContext = SynchronizationContext.Current;
     }
 
-    public SynchronizationContext uiContext;
 
     // Кнопка "Файл"
     private void Button_Click(object sender, RoutedEventArgs e)
@@ -43,17 +49,11 @@ public partial class MainWindow : Window
     {
         if (PasswordBox.Password != "")
         {
-            int pass = Convert.ToInt32(PasswordBox.Password);
+            var pass = Convert.ToInt32(PasswordBox.Password);
             if (PasswordBox.Password.Length > 3)
-            {
-                PasswordBox.Password = String.Empty;
-            }
-            else if (pass < 0 | pass > 255)
-            {
-                PasswordBox.Password = String.Empty;
-            }
+                PasswordBox.Password = string.Empty;
+            else if ((pass < 0) | (pass > 255)) PasswordBox.Password = string.Empty;
         }
-
     }
 
     // изменения в поле для пароля
@@ -71,12 +71,8 @@ public partial class MainWindow : Window
         else
             StartEncryptButton.IsEnabled = true;
 
-        if (!File.Exists(FilePath.Text))
-        {
-            StartEncryptButton.IsEnabled = false;
-            //FilePath.Text = "";
-        }
-
+        if (!File.Exists(FilePath.Text)) StartEncryptButton.IsEnabled = false;
+        //FilePath.Text = "";
     }
 
     // изменение поля пути к файлу
@@ -90,12 +86,10 @@ public partial class MainWindow : Window
     {
         StartEncryptButton.IsEnabled = false;
         CancelButton.IsEnabled = true;
-        string filePath = FilePath.Text;
-        byte encryptionKey = Convert.ToByte(PasswordBox.Password);
+        var filePath = FilePath.Text;
+        var encryptionKey = Convert.ToByte(PasswordBox.Password);
 
-        CancellationTokenSource cts = new CancellationTokenSource(); // попробовать вынести в зону видимости класса и из события клика "отмены" вызывать cts.Cancel();
-
-        _cancelEncryption = false;
+        //_cancelEncryption = false;
         try
         {
             await XorFileEncryption(filePath, encryptionKey, cts.Token);
@@ -111,33 +105,42 @@ public partial class MainWindow : Window
     }
 
     // кнопка "Отмена", tru - отмена, false - продолжить
-    private bool _cancelEncryption = false;
+    //private bool _cancelEncryption = false;
     private async Task XorFileEncryption(string filePath, byte encryptionKey, CancellationToken token)
     {
         await Task.Run(() =>
         {
             // Read all bytes from the specified file into a byte array
-            byte[] fileBytes = File.ReadAllBytes(filePath);
+            var fileBytes = File.ReadAllBytes(filePath);
+
+            long totalBytesRead = 0;
+            var fileSize = fileBytes.Length;
 
             // Loop through each byte in the byte array and XOR it with the encryption key
-            for (int i = 0; i < fileBytes.Length; i++)
+            for (var i = 0; i < fileBytes.Length; i++)
             {
                 //if (_cancelEncryption)
                 // todo: посмотреть к месту ли эта ниже строка тут, пересмотреть видео по примеру отмены и подумать куда вставить "cts.Cancel();"
-                token.ThrowIfCancellationRequested();
+                token.ThrowIfCancellationRequested(); // TODO ошибка.
 
                 fileBytes[i] = (byte)(fileBytes[i] ^ encryptionKey);
-                //Thread.Sleep(2000);
+                totalBytesRead++;
+                Thread.Sleep(500);
+
+                var percentage = (int)(totalBytesRead * 100 / fileSize);
+                UiContext.Send(d => ProgressBar.Value = percentage, null);
             }
 
             // Overwrite the original file with the encrypted/decrypted bytes
             File.WriteAllBytes(filePath, fileBytes);
-
+            UiContext.Send(d => StartEncryptButton.IsEnabled = true, null);
+            UiContext.Send(d => CancelButton.IsEnabled = false, null);
         }, token);
     }
 
     private void CancelButton_Click(object sender, RoutedEventArgs e)
     {
-        _cancelEncryption = true;
+        //_cancelEncryption = true;
+        cts.Cancel();
     }
 }
