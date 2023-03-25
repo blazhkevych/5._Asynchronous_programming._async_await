@@ -85,16 +85,17 @@ public partial class MainWindow : Window
         CheckBeforeStart();
     }
 
-    // 
+    // кнопка "Пуск"
     private async void StartEncryptButton_Click(object sender, RoutedEventArgs e)
     {
-        // включить кнопку отмены.
         StartEncryptButton.IsEnabled = false;
+        CancelButton.IsEnabled = true;
         string filePath = FilePath.Text;
         byte encryptionKey = Convert.ToByte(PasswordBox.Password);
 
-        CancellationTokenSource cts = new CancellationTokenSource();
+        CancellationTokenSource cts = new CancellationTokenSource(); // попробовать вынести в зону видимости класса и из события клика "отмены" вызывать cts.Cancel();
 
+        _cancelEncryption = false;
         try
         {
             await XorFileEncryption(filePath, encryptionKey, cts.Token);
@@ -109,9 +110,11 @@ public partial class MainWindow : Window
         }
     }
 
-    private Task XorFileEncryption(string filePath, byte encryptionKey, CancellationToken token)
+    // кнопка "Отмена", tru - отмена, false - продолжить
+    private bool _cancelEncryption = false;
+    private async Task XorFileEncryption(string filePath, byte encryptionKey, CancellationToken token)
     {
-        return Task.Run(() =>
+        await Task.Run(() =>
         {
             // Read all bytes from the specified file into a byte array
             byte[] fileBytes = File.ReadAllBytes(filePath);
@@ -119,14 +122,22 @@ public partial class MainWindow : Window
             // Loop through each byte in the byte array and XOR it with the encryption key
             for (int i = 0; i < fileBytes.Length; i++)
             {
-                fileBytes[i] = (byte)(fileBytes[i] ^ encryptionKey);
+                //if (_cancelEncryption)
+                // todo: посмотреть к месту ли эта ниже строка тут, пересмотреть видео по примеру отмены и подумать куда вставить "cts.Cancel();"
                 token.ThrowIfCancellationRequested();
+
+                fileBytes[i] = (byte)(fileBytes[i] ^ encryptionKey);
+                //Thread.Sleep(2000);
             }
 
             // Overwrite the original file with the encrypted/decrypted bytes
             File.WriteAllBytes(filePath, fileBytes);
+
         }, token);
     }
 
-
+    private void CancelButton_Click(object sender, RoutedEventArgs e)
+    {
+        _cancelEncryption = true;
+    }
 }

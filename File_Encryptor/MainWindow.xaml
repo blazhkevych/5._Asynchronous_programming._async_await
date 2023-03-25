@@ -45,7 +45,7 @@
 
         <!--3 строка-->
         <Button Name="StartEncryptButton" Grid.Row="3" Grid.Column="2" Content="Пуск" Margin="5" Click="StartEncryptButton_Click" />
-        <Button Name="CancelButton" Grid.Row="3" Grid.Column="3" Content="Отмена" Margin="5" />
+        <Button Name="CancelButton" Grid.Row="3" Grid.Column="3" Content="Отмена" Margin="5" Click="CancelButton_Click" />
 
     </Grid>
 </Window>
