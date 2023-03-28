@@ -8,13 +8,10 @@ using Microsoft.Win32;
 
 namespace File_Encryptor;
 
-/// <summary>
-///     Interaction logic for MainWindow.xaml
-/// </summary>
 public partial class MainWindow : Window
 {
-    private readonly CancellationTokenSource
-        cts = new(); // попробовать вынести в зону видимости класса и из события клика "отмены" вызывать cts.Cancel();
+    private CancellationTokenSource
+        cts = new();
 
     public SynchronizationContext UiContext;
 
@@ -72,7 +69,6 @@ public partial class MainWindow : Window
             StartEncryptButton.IsEnabled = true;
 
         if (!File.Exists(FilePath.Text)) StartEncryptButton.IsEnabled = false;
-        //FilePath.Text = "";
     }
 
     // изменение поля пути к файлу
@@ -96,51 +92,67 @@ public partial class MainWindow : Window
         }
         catch (OperationCanceledException ex)
         {
-            Console.WriteLine(ex.Message);
+            MessageBox.Show(ex.Message);
         }
         finally
         {
             cts.Dispose();
+            cts = new CancellationTokenSource();
         }
     }
 
     // кнопка "Отмена", tru - отмена, false - продолжить
-    //private bool _cancelEncryption = false;
     private async Task XorFileEncryption(string filePath, byte encryptionKey, CancellationToken token)
     {
         await Task.Run(() =>
         {
-            // Read all bytes from the specified file into a byte array
-            var fileBytes = File.ReadAllBytes(filePath);
-
-            long totalBytesRead = 0;
-            var fileSize = fileBytes.Length;
-
-            // Loop through each byte in the byte array and XOR it with the encryption key
-            for (var i = 0; i < fileBytes.Length; i++)
+            try
             {
-                //if (_cancelEncryption)
-                // todo: посмотреть к месту ли эта ниже строка тут, пересмотреть видео по примеру отмены и подумать куда вставить "cts.Cancel();"
-                token.ThrowIfCancellationRequested(); // TODO ошибка.
+                // Read all bytes from the specified file into a byte array
+                var fileBytes = File.ReadAllBytes(filePath);
 
-                fileBytes[i] = (byte)(fileBytes[i] ^ encryptionKey);
-                totalBytesRead++;
-                Thread.Sleep(500);
+                long totalBytesRead = 0;
+                var fileSize = fileBytes.Length;
 
-                var percentage = (int)(totalBytesRead * 100 / fileSize);
-                UiContext.Send(d => ProgressBar.Value = percentage, null);
+                // Loop through each byte in the byte array and XOR it with the encryption key
+                for (var i = 0; i < fileBytes.Length; i++)
+                {
+                    if (token.IsCancellationRequested)
+                    {
+                        MessageBox.Show("Получен запрос на отмену задачи!");
+                        break;
+                    }
+
+                    fileBytes[i] = (byte)(fileBytes[i] ^ encryptionKey);
+                    totalBytesRead++;
+                    Thread.Sleep(500);
+
+                    var percentage = (int)(totalBytesRead * 100 / fileSize);
+                    UiContext.Send(d => ProgressBar.Value = percentage, null);
+                }
+
+                if (token.IsCancellationRequested)
+                {
+                    UiContext.Send(d => ProgressBar.Value = 0, null);
+                    UiContext.Send(d => StartEncryptButton.IsEnabled = true, null);
+                    UiContext.Send(d => CancelButton.IsEnabled = false, null);
+                    return;
+                }
+
+                // Overwrite the original file with the encrypted/decrypted bytes
+                File.WriteAllBytes(filePath, fileBytes);
+                UiContext.Send(d => StartEncryptButton.IsEnabled = true, null);
+                UiContext.Send(d => CancelButton.IsEnabled = false, null);
             }
-
-            // Overwrite the original file with the encrypted/decrypted bytes
-            File.WriteAllBytes(filePath, fileBytes);
-            UiContext.Send(d => StartEncryptButton.IsEnabled = true, null);
-            UiContext.Send(d => CancelButton.IsEnabled = false, null);
+            catch (Exception e)
+            {
+                MessageBox.Show(e.Message);
+            }
         }, token);
     }
 
     private void CancelButton_Click(object sender, RoutedEventArgs e)
     {
-        //_cancelEncryption = true;
         cts.Cancel();
     }
 }
